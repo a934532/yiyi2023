@@ -11,9 +11,10 @@ TG_CHAT_ID = os.getenv('TG_CHAT_ID')
 
 # 監控清單
 WATCHLIST = [
-    {'symbol': 'DUSK/USDT', 'timeframe': '15m', 'upper': 70, 'lower': 30},
-    {'symbol': 'LIT/USDT',  'timeframe': '15m', 'upper': 70, 'lower': 30},
-    {'symbol': 'CHZ/USDT',  'timeframe': '15m', 'upper': 70, 'lower': 30},
+    {'symbol': 'DUSK/USDT', 'timeframe': '15m', 'upper': 70, 'lower': 20},
+    {'symbol': 'LIT/USDT',  'timeframe': '15m', 'upper': 70, 'lower': 20},
+    {'symbol': 'CHZ/USDT',  'timeframe': '15m', 'upper': 70, 'lower': 20},
+    {'symbol': 'ZEC/USDT',  'timeframe': '15m', 'upper': 65, 'lower': 20},
 ]
 
 def send_telegram(message):
