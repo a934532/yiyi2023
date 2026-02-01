@@ -2,7 +2,7 @@ name: RSI_Auto_Monitor
 
 on:
   schedule:
-    - cron: '*/15 * * * *'  # 每 15 分鐘自動跑一次
+    - cron: '*/5 * * * *'  # 每 5 分鐘自動跑一次
   workflow_dispatch:        # 允許你手動點擊按鈕測試
 
 jobs:
