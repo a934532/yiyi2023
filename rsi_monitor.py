@@ -30,27 +30,25 @@ def check_coin(exchange, config):
     tf = config['timeframe']
     
     try:
-        # 抓取 K 線 (抓多一點，確保夠回頭看)
+        # 抓取 K 線
         bars = exchange.fetch_ohlcv(symbol, timeframe=tf, limit=50)
         df = pd.DataFrame(bars, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
         
         # 計算 RSI
         df['rsi'] = ta.rsi(df['c'], length=14)
         
-        # 🔥【超級修正】回頭檢查最近 3 根收盤的 K 線
-        # 這樣就算 GitHub 遲到 30 分鐘，我們也抓得到訊號！
-        # iloc[-2] = 上一根 (剛收盤)
-        # iloc[-3] = 上上根
-        # iloc[-4] = 上上上根
-        
-        last_3_candles = df.iloc[-4:-1] # 取倒數第 4 到倒數第 2 根
+        # 回頭檢查最近 3 根收盤的 K 線
+        last_3_candles = df.iloc[-4:-1]
         
         found_signal = False
         
         for index, row in last_3_candles.iterrows():
             rsi_val = float(row['rsi'])
-            # 轉換時間戳記方便閱讀 (例如 19:15)
-            time_str = pd.to_datetime(row['ts'], unit='ms').strftime('%H:%M')
+            
+            # 🔥【修正時間顯示】將 UTC 時間 +8 小時 (轉成台灣時間)
+            utc_time = pd.to_datetime(row['ts'], unit='ms')
+            tw_time = utc_time + pd.Timedelta(hours=8)
+            time_str = tw_time.strftime('%H:%M')
             
             if rsi_val >= config['upper']:
                 msg = f"🔥 {symbol} ({tf}) 補捉到訊號！\n時間：{time_str}\nRSI數值：{rsi_val:.2f} (高於 {config['upper']})"
@@ -62,10 +60,14 @@ def check_coin(exchange, config):
                 found_signal = True
 
         if not found_signal:
-            print(f"{symbol} ({tf}) 最近 3 根無訊號 (最新收盤 RSI: {df['rsi'].iloc[-2]:.2f})")
+            # 這裡也順便把 log 的時間改成台灣時間，方便你除錯
+            last_ts = pd.to_datetime(df['ts'].iloc[-2], unit='ms') + pd.Timedelta(hours=8)
+            last_time_str = last_ts.strftime('%H:%M')
+            print(f"{symbol} ({tf}) 無訊號 (收盤時間 {last_time_str}, RSI: {df['rsi'].iloc[-2]:.2f})")
             
     except Exception as e:
         print(f"❌ 監控 {symbol} 錯誤: {e}")
+
 
 
 def run_monitor():
