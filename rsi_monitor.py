@@ -71,7 +71,7 @@ def check_coin(exchange, config):
 def run_monitor():
     # 🔥【關鍵修正 2】改用 KuCoin，它的價格跟全球主流比較一致
     # 如果 KuCoin 也被擋，我們再換回 binanceus，但保留上面的 iloc[-2] 修正
-    exchange = ccxt.binanceus()
+    exchange = ccxt.kucoin()
  
     
     print(f"--- 開始掃描 (使用 KuCoin 數據) ---")
