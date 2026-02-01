@@ -16,7 +16,7 @@ def send_telegram(message):
     requests.post(url, json=payload)
 
 def run_monitor():
-    exchange = ccxt.binance()
+    exchange = ccxt.binanceus()
     # 抓取 15m K線
     bars = exchange.fetch_ohlcv(SYMBOL, timeframe=TIMEFRAME, limit=50)
     df = pd.DataFrame(bars, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
