@@ -9,12 +9,20 @@ import time
 TG_TOKEN = os.getenv('TG_TOKEN')
 TG_CHAT_ID = os.getenv('TG_CHAT_ID')
 
-# 監控清單
+# 🔥 監控清單
+# 新增參數 'lookback': 你要回頭檢查幾根 K 線？
+# 對於 1m (1分鐘) 建議設 20~30 (以免 GitHub 遲到漏單)
+# 對於 15m (15分鐘) 建議設 3~5 就好 (不然同一根訊號會重複通知很久)
 WATCHLIST = [
-    {'symbol': 'DUSK/USDT', 'timeframe': '15m', 'upper': 70, 'lower': 34},
-    {'symbol': 'LIT/USDT',  'timeframe': '15m', 'upper': 70, 'lower': 20},
-    {'symbol': 'CHZ/USDT',  'timeframe': '15m', 'upper': 70, 'lower': 20},
-    {'symbol': 'ZEC/USDT',  'timeframe': '15m', 'upper': 65, 'lower': 20},
+    # 範例 1: BTC 1分鐘，回頭檢查 30 根 (過去30分鐘)，門檻 5M USDT
+    {'symbol': 'BTC/USDT', 'timeframe': '1m', 'mode': 'volume', 'threshold': 6000000, 'lookback': 30},
+    
+    # 範例 2: DUSK 15分鐘，回頭檢查 3 根 (過去45分鐘)
+    {'symbol': 'DUSK/USDT', 'timeframe': '15m', 'mode': 'rsi', 'upper': 70, 'lower': 34, 'lookback': 3},
+    {'symbol': 'CHZ/USDT',  'timeframe': '15m', 'mode': 'rsi', 'upper': 70, 'lower': 20, 'lookback': 3},
+    {'symbol': 'LIT/USDT',  'timeframe': '15m', 'mode': 'rsi', 'upper': 70, 'lower': 20, 'lookback': 3},
+    {'symbol': 'ZEC/USDT',  'timeframe': '15m', 'mode': 'rsi', 'upper': 65, 'lower': 20, 'lookback': 3},
+
 ]
 
 def send_telegram(message):
@@ -28,55 +36,71 @@ def send_telegram(message):
 def check_coin(exchange, config):
     symbol = config['symbol']
     tf = config['timeframe']
+    mode = config.get('mode', 'rsi')
+    lookback = config.get('lookback', 3) # 如果沒寫，預設檢查 3 根
     
     try:
-        # 抓取 K 線
-        bars = exchange.fetch_ohlcv(symbol, timeframe=tf, limit=50)
+        # 抓取 K 線 (為了檢查 30 根，我們抓 100 根比較安全)
+        bars = exchange.fetch_ohlcv(symbol, timeframe=tf, limit=100)
         df = pd.DataFrame(bars, columns=['ts', 'o', 'h', 'l', 'c', 'v'])
         
-        # 計算 RSI
-        df['rsi'] = ta.rsi(df['c'], length=14)
+        # 轉換時間為台灣時間
+        df['dt'] = pd.to_datetime(df['ts'], unit='ms') + pd.Timedelta(hours=8)
         
-        # 回頭檢查最近 3 根收盤的 K 線
-        last_3_candles = df.iloc[-4:-1]
-        
-        found_signal = False
-        
-        for index, row in last_3_candles.iterrows():
-            rsi_val = float(row['rsi'])
+        # --- 🔎 模式 A: 成交量監控 ---
+        if mode == 'volume':
+            threshold = config['threshold']
+            df['vol_usdt'] = df['v'] * df['c']
             
-            # 🔥【修正時間顯示】將 UTC 時間 +8 小時 (轉成台灣時間)
-            utc_time = pd.to_datetime(row['ts'], unit='ms')
-            tw_time = utc_time + pd.Timedelta(hours=8)
-            time_str = tw_time.strftime('%H:%M')
+            # 🔥【動態調整】根據設定的 lookback 決定檢查範圍
+            # iloc[-31:-1] 代表檢查倒數第 31 根到倒數第 2 根
+            check_range = df.iloc[-(lookback+1):-1]
             
-            if rsi_val >= config['upper']:
-                msg = f"🔥 {symbol} ({tf}) 補捉到訊號！\n時間：{time_str}\nRSI數值：{rsi_val:.2f} (高於 {config['upper']})"
-                send_telegram(msg)
-                found_signal = True
-            elif rsi_val <= config['lower']:
-                msg = f"❄️ {symbol} ({tf}) 補捉到訊號！\n時間：{time_str}\nRSI數值：{rsi_val:.2f} (低於 {config['lower']})"
-                send_telegram(msg)
-                found_signal = True
+            found = False
+            for i, row in check_range.iterrows():
+                vol = row['vol_usdt']
+                if vol >= threshold:
+                    time_str = row['dt'].strftime('%H:%M')
+                    vol_m = vol / 1000000 
+                    
+                    msg = f"🚨 {symbol} ({tf}) 爆量警告！\n時間：{time_str}\n成交額：{vol_m:.2f} M\n(檢查範圍：過去 {lookback} 根)"
+                    send_telegram(msg)
+                    found = True
+            
+            if not found:
+                last_vol = df['vol_usdt'].iloc[-2] / 1000000
+                print(f"{symbol} ({tf}) 無爆量 (最新: {last_vol:.2f} M)")
 
-        if not found_signal:
-            # 這裡也順便把 log 的時間改成台灣時間，方便你除錯
-            last_ts = pd.to_datetime(df['ts'].iloc[-2], unit='ms') + pd.Timedelta(hours=8)
-            last_time_str = last_ts.strftime('%H:%M')
-            print(f"{symbol} ({tf}) 無訊號 (收盤時間 {last_time_str}, RSI: {df['rsi'].iloc[-2]:.2f})")
+        # --- 🔎 模式 B: RSI 監控 ---
+        elif mode == 'rsi':
+            df['rsi'] = ta.rsi(df['c'], length=14)
+            check_range = df.iloc[-(lookback+1):-1]
             
+            found = False
+            for i, row in check_range.iterrows():
+                rsi_val = float(row['rsi'])
+                
+                if rsi_val >= config['upper']:
+                    time_str = row['dt'].strftime('%H:%M')
+                    msg = f"🔥 {symbol} ({tf}) RSI 超買\n時間：{time_str}\n數值：{rsi_val:.2f}"
+                    send_telegram(msg)
+                    found = True
+                elif rsi_val <= config['lower']:
+                    time_str = row['dt'].strftime('%H:%M')
+                    msg = f"❄️ {symbol} ({tf}) RSI 超賣\n時間：{time_str}\n數值：{rsi_val:.2f}"
+                    send_telegram(msg)
+                    found = True
+            
+            if not found:
+                 print(f"{symbol} ({tf}) RSI 無訊號 (最新: {df['rsi'].iloc[-2]:.2f})")
+
     except Exception as e:
         print(f"❌ 監控 {symbol} 錯誤: {e}")
 
-
-
 def run_monitor():
-    # 🔥【關鍵修正 2】改用 KuCoin，它的價格跟全球主流比較一致
-    # 如果 KuCoin 也被擋，我們再換回 binanceus，但保留上面的 iloc[-2] 修正
-    exchange = ccxt.kucoin()
- 
+    exchange = ccxt.kucoin() 
+    print(f"--- 開始掃描 ---")
     
-    print(f"--- 開始掃描 (使用 KuCoin 數據) ---")
     for config in WATCHLIST:
         check_coin(exchange, config)
         time.sleep(1)
