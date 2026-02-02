@@ -15,7 +15,7 @@ TG_CHAT_ID = os.getenv('TG_CHAT_ID')
 # 對於 15m (15分鐘) 建議設 3~5 就好 (不然同一根訊號會重複通知很久)
 WATCHLIST = [
     # 範例 1: BTC 1分鐘，回頭檢查 30 根 (過去30分鐘)，門檻 5M USDT
-    {'symbol': 'BTC/USDT', 'timeframe': '1m', 'mode': 'volume', 'threshold': 6000000, 'lookback': 30},
+    {'symbol': 'BTC/USDT', 'timeframe': '1m', 'mode': 'volume', 'threshold': 6000000, 'lookback': 20},
     
     # 範例 2: DUSK 15分鐘，回頭檢查 3 根 (過去45分鐘)
     {'symbol': 'DUSK/USDT', 'timeframe': '15m', 'mode': 'rsi', 'upper': 70, 'lower': 34, 'lookback': 3},
