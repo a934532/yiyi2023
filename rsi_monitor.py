@@ -25,14 +25,16 @@ def send_bot_msg(text):
 
 def extract_coin(text):
     """
-    精確提取幣名，過濾掉長字串與雜訊
+    精確提取幣名，支援 1~12 個字元的代碼 (例如 B, XRP, 1000PEPE)
     """
     try:
+        # 取得第一行
         first_line = text.split('\n')[0]
         if '—' in first_line:
+            # 取得最後一個分隔符號後的內容
             potential = first_line.split('—')[-1].strip()
-            # 只抓取長度 3~12 的大寫英數組合 (例如 XRP, 1000PEPE)
-            match = re.search(r'([A-Z0-9]{3,12})', potential)
+            # 修改處：{1,12} 允許 1 個字以上的純大寫英數組合
+            match = re.search(r'^([A-Z0-9]{1,12})', potential)
             if match:
                 return match.group(1)
     except:
@@ -43,20 +45,20 @@ def clean_info(text):
     """
     提取 OI 與 價格 數據，過濾廣告
     """
-    # 將常見符號強制換行，處理字串黏在一起的問題
+    # 將標誌性符號強制換行，處理字串黏在一起的問題
     formatted = text.replace("📈", "\n📈").replace("💱", "\n💱")
     lines = [l.strip() for l in formatted.split('\n') if l.strip()]
     
-    # 只保留包含關鍵數據的行
     results = []
     for line in lines:
+        # 尋找包含關鍵數據的行
         if any(k in line.upper() for k in ["OI ", "PRICE", "INCREASED", "DECREASED"]):
-            # 移除廣告詞
-            clean_line = re.sub(r'FULL ACCESS.*|THIS IS ONLY.*', '', line, flags=re.IGNORECASE)
+            # 移除常見廣告詞
+            clean_line = re.sub(r'FULL ACCESS.*|THIS IS ONLY.*|PRO FOR 24.*', '', line, flags=re.IGNORECASE)
             if clean_line.strip():
                 results.append(clean_line.strip())
     
-    return "\n".join(results[:2]) # 只取最重要的前兩行數據
+    return "\n".join(results[:2])
 
 def main():
     print(f"=== 啟動檢查: {get_tw_now().strftime('%H:%M:%S')} ===")
@@ -74,15 +76,16 @@ def main():
         soup = BeautifulSoup(res.text, 'html.parser')
         messages = soup.find_all('div', class_='tgme_widget_message_text')
     except:
+        print("網頁讀取超時")
         return
 
     now_ts = time.time()
     found_new = False
     
-    # 本次執行的「臨時去重表」，防止同一輪內重複發送
+    # 本次執行的去重表
     seen_this_run = set()
 
-    # 3. 逆序處理訊息（從舊到新，確保最新訊息的時間被記錄）
+    # 3. 處理訊息 (逆序處理：從舊到新)
     for msg_div in reversed(messages):
         full_text = msg_div.get_text()
         coin = extract_coin(full_text)
@@ -95,7 +98,7 @@ def main():
                 data_text = clean_info(full_text)
                 tw_time = get_tw_now().strftime('%m/%d %H:%M')
                 
-                # 簡潔版排版
+                # 簡潔排版
                 alert_text = (
                     f"💎 *{coin}* (48H首見)\n"
                     f"━━━━━━━━━━━━━━\n"
@@ -111,7 +114,7 @@ def main():
                 seen_this_run.add(coin)
                 found_new = True
 
-    # 5. 只有在有新通知時才更新檔案，減少 GitHub 的 Commit 壓力
+    # 5. 更新檔案
     if found_new:
         with open(HISTORY_FILE, 'w') as f:
             json.dump(history, f)
