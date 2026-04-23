@@ -1,27 +1,16 @@
-name: RSI_Auto_Monitor
-
-on:
-  schedule:
-    - cron: '*/5 * * * *'  # 每 5 分鐘自動跑一次
-  workflow_dispatch:        # 允許你手動點擊按鈕測試
-
-jobs:
-  check_rsi:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.12'
+          python-version: '3.9'
 
+      # --- 這是你漏掉的步驟 ---
       - name: Install dependencies
-        run: pip install ccxt pandas_ta pandas requests
+        run: |
+          pip install telethon requests
+          # 如果你的程式還有用到其他套件，也請寫在這邊
 
-      - name: Run Monitor
-        env:
-          TG_TOKEN: ${{ secrets.TG_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+      - name: Run Script
         run: python rsi_monitor.py
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
