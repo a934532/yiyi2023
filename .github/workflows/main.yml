@@ -13,45 +13,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4  # 更新到 v4
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v5 # 更新到 v5
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Install dependencies
         run: |
-          pip install telethon requests pytz
-
-      - name: Run Monitoring Script
-        # 這裡加上了確認檔案存在的指令
-        run: |
-          export TZ='Asia/Taipei'
-          if [ ! -f rsi_monitor.py ]; then
-            echo "找不到 rsi_monitor.py 檔案！"
-            exit 1
-          fi
-          python rsi_monitor.py
-        env:
-          TG_API_ID: ${{ secrets.TG_API_ID }}
-          TG_API_HASH: ${{ secrets.TG_API_HASH }}
-
-      - name: Commit and Push History
-        run: |
-          git config --global user.name "GitHub Action Bot"
-          git config --global user.email "actions@github.com"
-          if [ -f notify_history.json ]; then
-            git add notify_history.json
-            git commit -m "Update coin history [skip ci]" || echo "No changes to commit"
-            git push
-          fi
-          
-      - name: Install dependencies
-        run: |
-          # 注意：安裝時要寫 beautifulsoup4，不是 bs4
-          pip install requests beautifulsoup4 
-
+          python -m pip install --upgrade pip
+          # 優先讀取 requirements.txt，如果沒檔案就直接裝
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; else pip install requests beautifulsoup4; fi
 
       - name: Run Monitoring Script
         run: |
@@ -60,3 +33,13 @@ jobs:
         env:
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+
+      - name: Commit and Push History
+        run: |
+          git config --global user.name "GitHub Action Bot"
+          git config --global user.email "actions@github.com"
+          if [ -f notify_history.json ]; then
+            git add notify_history.json
+            git commit -m "Update history [skip ci]" || echo "No changes"
+            git push
+          fi
