@@ -46,3 +46,15 @@ jobs:
             git commit -m "Update coin history [skip ci]" || echo "No changes to commit"
             git push
           fi
+          
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4
+
+      - name: Run Monitoring Script
+        run: |
+          export TZ='Asia/Taipei'
+          python rsi_monitor.py
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
