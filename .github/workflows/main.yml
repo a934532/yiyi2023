@@ -2,7 +2,8 @@ name: 48H_Coin_Monitor
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    # 改成每 15 分鐘執行一次
+    - cron: '*/15 * * * *'  
   workflow_dispatch:
 
 permissions:
@@ -23,7 +24,6 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # 優先讀取 requirements.txt，如果沒檔案就直接裝
           if [ -f requirements.txt ]; then pip install -r requirements.txt; else pip install requests beautifulsoup4; fi
 
       - name: Run Monitoring Script
