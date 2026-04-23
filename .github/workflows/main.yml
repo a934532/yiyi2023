@@ -1,16 +1,44 @@
+name: 48H_Coin_Monitor
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # 每小時執行一次
+  workflow_dispatch:      # 讓你可以手動點擊按鈕測試
+
+permissions:
+  contents: write         # 必須開啟，才能把紀錄存回 GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
 
-      # --- 這是你漏掉的步驟 ---
       - name: Install dependencies
         run: |
-          pip install telethon requests
-          # 如果你的程式還有用到其他套件，也請寫在這邊
+          pip install telethon requests pytz
 
-      - name: Run Script
-        run: python rsi_monitor.py
+      - name: Run Monitoring Script
+        run: |
+          export TZ='Asia/Taipei'
+          python rsi_monitor.py
         env:
           TG_API_ID: ${{ secrets.TG_API_ID }}
           TG_API_HASH: ${{ secrets.TG_API_HASH }}
+          # 如果你有用其他 Secret，記得加在這裡
+
+      - name: Commit and Push History
+        run: |
+          git config --global user.name "GitHub Action Bot"
+          git config --global user.email "actions@github.com"
+          if [ -f notify_history.json ]; then
+            git add notify_history.json
+            git commit -m "Update coin history [skip ci]" || echo "No changes to commit"
+            git push
+          fi
