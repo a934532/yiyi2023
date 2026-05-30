@@ -10,7 +10,9 @@ from datetime import datetime, timedelta, timezone
 TOKEN = os.getenv('TG_TOKEN')
 CHAT_ID = os.getenv('TG_CHAT_ID')
 HISTORY_FILE = 'notify_history.json'
-COOLDOWN_SECONDS = 48 * 3600  # 48 小時
+
+# 修改處：從 48 小時改成 96 小時 (96 * 3600 = 345600 秒)
+COOLDOWN_SECONDS = 96 * 3600  
 
 def get_tw_now():
     return datetime.now(timezone(timedelta(hours=8)))
@@ -28,12 +30,9 @@ def extract_coin(text):
     精確提取幣名，支援 1~12 個字元的代碼 (例如 B, XRP, 1000PEPE)
     """
     try:
-        # 取得第一行
         first_line = text.split('\n')[0]
         if '—' in first_line:
-            # 取得最後一個分隔符號後的內容
             potential = first_line.split('—')[-1].strip()
-            # 修改處：{1,12} 允許 1 個字以上的純大寫英數組合
             match = re.search(r'^([A-Z0-9]{1,12})', potential)
             if match:
                 return match.group(1)
@@ -45,15 +44,12 @@ def clean_info(text):
     """
     提取 OI 與 價格 數據，過濾廣告
     """
-    # 將標誌性符號強制換行，處理字串黏在一起的問題
     formatted = text.replace("📈", "\n📈").replace("💱", "\n💱")
     lines = [l.strip() for l in formatted.split('\n') if l.strip()]
     
     results = []
     for line in lines:
-        # 尋找包含關鍵數據的行
         if any(k in line.upper() for k in ["OI ", "PRICE", "INCREASED", "DECREASED"]):
-            # 移除常見廣告詞
             clean_line = re.sub(r'FULL ACCESS.*|THIS IS ONLY.*|PRO FOR 24.*', '', line, flags=re.IGNORECASE)
             if clean_line.strip():
                 results.append(clean_line.strip())
@@ -81,26 +77,23 @@ def main():
 
     now_ts = time.time()
     found_new = False
-    
-    # 本次執行的去重表
     seen_this_run = set()
 
     # 3. 處理訊息 (逆序處理：從舊到新)
-    for msg_div in reversed(messages):
+    for msg_div in messages:
         full_text = msg_div.get_text()
         coin = extract_coin(full_text)
         
         if coin and coin not in seen_this_run:
             last_time = history.get(coin, 0)
             
-            # 4. 檢查 48 小時冷卻
+            # 4. 檢查 96 小時冷卻
             if (now_ts - last_time) > COOLDOWN_SECONDS:
                 data_text = clean_info(full_text)
                 tw_time = get_tw_now().strftime('%m/%d %H:%M')
                 
-                # 簡潔排版
                 alert_text = (
-                    f"💎 *{coin}* (48H首見)\n"
+                    f"💎 *{coin}* (96H首見)\n"
                     f"━━━━━━━━━━━━━━\n"
                     f"{data_text}\n"
                     f"⏰ {tw_time}"
@@ -109,7 +102,6 @@ def main():
                 send_bot_msg(alert_text)
                 print(f"✅ 已通知: {coin}")
                 
-                # 更新狀態
                 history[coin] = now_ts
                 seen_this_run.add(coin)
                 found_new = True
