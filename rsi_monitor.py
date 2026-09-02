@@ -21,7 +21,7 @@ def send_bot_msg(text):
         "chat_id": CHAT_ID, 
         "text": text, 
         "parse_mode": "Markdown",
-        "disable_web_page_preview": True  # 避免 Telegram 產生網頁預覽框，保持畫面乾淨
+        "disable_web_page_preview": True  # 關閉網頁縮圖卡片，保持畫面乾淨
     }
     try:
         requests.post(url, json=payload, timeout=10)
@@ -90,7 +90,8 @@ def main():
     try:
         res = requests.get(url, timeout=15)
         soup = BeautifulSoup(res.text, 'html.parser')
-        messages = soup.find_all('div', class_='tgme_widget_message_text')
+        # 改為抓取整個 widget_message 容器，才能拿到 data-post 屬性
+        message_widgets = soup.find_all('div', class_='tgme_widget_message')
     except Exception as e:
         print(f"網頁讀取失敗: {e}")
         return
@@ -99,7 +100,12 @@ def main():
     found_new = False
     seen_this_run = set()
 
-    for msg_div in reversed(messages):
+    for widget in reversed(message_widgets):
+        # 尋找文字區域
+        msg_div = widget.find('div', class_='tgme_widget_message_text')
+        if not msg_div:
+            continue
+            
         full_text = msg_div.get_text()
         coin = extract_coin(full_text)
         
@@ -110,19 +116,23 @@ def main():
                 data_text = clean_info(full_text)
                 tw_time = get_tw_now().strftime('%m/%d %H:%M')
                 
-                # 頻道連結範例：https://t.me/oi_detector
-                channel_link = f"https://t.me/{channel_username}"
+                # 抓取這則訊息對應的單則 ID (格式通常為 oi_detector/1234)
+                data_post = widget.get('data-post', '')
+                if data_post:
+                    msg_link = f"https://t.me/{data_post}"
+                else:
+                    msg_link = f"https://t.me/{channel_username}"
                 
                 alert_text = (
                     f"💎 *{coin}* (96H首見)\n"
                     f"━━━━━━━━━━━━━━\n"
                     f"{data_text}\n"
                     f"⏰ {tw_time}\n\n"
-                    f"🔗 [開啟原頻道]({channel_link})"
+                    f"🎯 [定位到此訊號]({msg_link})"
                 )
                 
                 send_bot_msg(alert_text)
-                print(f"✅ 已發送通知: {coin}")
+                print(f"✅ 已發送定位通知: {coin} -> {msg_link}")
                 
                 history[coin] = now_ts
                 seen_this_run.add(coin)
