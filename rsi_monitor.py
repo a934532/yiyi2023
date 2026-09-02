@@ -17,7 +17,12 @@ def get_tw_now():
 
 def send_bot_msg(text):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": "Markdown"}
+    payload = {
+        "chat_id": CHAT_ID, 
+        "text": text, 
+        "parse_mode": "Markdown",
+        "disable_web_page_preview": True  # 避免 Telegram 產生網頁預覽框，保持畫面乾淨
+    }
     try:
         requests.post(url, json=payload, timeout=10)
     except:
@@ -46,14 +51,11 @@ def clean_info(text):
     """
     精準抽取 1h 的 OI、Price Change 與 Long/Short
     """
-    # 1. 抓取 OI 1h (例如 +5.54% (1h))
     oi_1h = "N/A"
     oi_match = re.search(r'([\+\-]\d+\.\d+%\s*\(1h\))', text)
     if oi_match:
         oi_1h = oi_match.group(1).replace(" ", "")
 
-    # 2. 抓取 Price change 1h (例如 +5.54% (1h))
-    # 訊息中通常有兩區 (1h)，第二區為 Price
     price_1h = "N/A"
     price_matches = re.findall(r'([\+\-]\d+\.\d+%\s*\(1h\))', text)
     if len(price_matches) >= 2:
@@ -61,13 +63,11 @@ def clean_info(text):
     elif len(price_matches) == 1:
         price_1h = price_matches[0].replace(" ", "")
 
-    # 3. 抓取 Long/Short 1h (例如 0.99 (1h))
     ls_1h = "N/A"
     ls_match = re.search(r'Long/Short\s+.*?\b(\d+\.\d+)\s*\(1h\)', text, re.IGNORECASE)
     if ls_match:
         ls_1h = ls_match.group(1)
 
-    # 組合乾淨的文字輸出
     result = (
         f"📈 *OI (1h)*: {oi_1h}\n"
         f"💰 *Price (1h)*: {price_1h}\n"
@@ -84,7 +84,9 @@ def main():
             try: history = json.load(f)
             except: history = {}
 
-    url = "https://t.me/s/oi_detector"
+    channel_username = "oi_detector"
+    url = f"https://t.me/s/{channel_username}"
+    
     try:
         res = requests.get(url, timeout=15)
         soup = BeautifulSoup(res.text, 'html.parser')
@@ -108,15 +110,19 @@ def main():
                 data_text = clean_info(full_text)
                 tw_time = get_tw_now().strftime('%m/%d %H:%M')
                 
+                # 頻道連結範例：https://t.me/oi_detector
+                channel_link = f"https://t.me/{channel_username}"
+                
                 alert_text = (
                     f"💎 *{coin}* (96H首見)\n"
                     f"━━━━━━━━━━━━━━\n"
                     f"{data_text}\n"
-                    f"⏰ {tw_time}"
+                    f"⏰ {tw_time}\n\n"
+                    f"🔗 [開啟原頻道]({channel_link})"
                 )
                 
                 send_bot_msg(alert_text)
-                print(f"✅ 已發送精簡通知: {coin}")
+                print(f"✅ 已發送通知: {coin}")
                 
                 history[coin] = now_ts
                 seen_this_run.add(coin)
