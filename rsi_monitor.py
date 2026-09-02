@@ -10,9 +10,7 @@ from datetime import datetime, timedelta, timezone
 TOKEN = os.getenv('TG_TOKEN')
 CHAT_ID = os.getenv('TG_CHAT_ID')
 HISTORY_FILE = 'notify_history.json'
-
-# 冷卻時間：96 小時
-COOLDOWN_SECONDS = 96 * 3600  
+COOLDOWN_SECONDS = 96 * 3600  # 96 小時冷卻
 
 def get_tw_now():
     return datetime.now(timezone(timedelta(hours=8)))
@@ -27,60 +25,70 @@ def send_bot_msg(text):
 
 def extract_coin(text):
     """
-    專為 t.me/oi_detector 優化的幣名提取邏輯
-    嘗試抓取如 $BTC, $ETH, BTCUSDT 或大寫代碼
+    匹配 #ROBO, #MVLL, #BTCUSDT 格式
     """
     try:
-        # 1. 優先尋找帶有 $ 符號的幣名 (例如 $BTC)
-        dollar_match = re.search(r'\$([A-Z0-9]{1,12})', text)
-        if dollar_match:
-            return dollar_match.group(1)
+        hash_match = re.search(r'#([A-Z0-9]{1,12})\b', text, re.IGNORECASE)
+        if hash_match:
+            coin = hash_match.group(1).upper()
+            if coin.endswith("USDT") and len(coin) > 4:
+                coin = coin[:-4]
+            return coin
 
-        # 2. 如果沒有 $，抓取第一行或第二行的大寫代碼
-        lines = [l.strip() for l in text.split('\n') if l.strip()]
-        for line in lines[:2]:
-            # 尋找包含 USDT / BUSD 的組合，或者純大寫代碼
-            coin_match = re.search(r'\b([A-Z0-9]{1,12})(?:USDT|PERP)?\b', line)
-            if coin_match:
-                return coin_match.group(1)
+        dollar_match = re.search(r'\$([A-Za-z][A-Za-z0-9]{0,11})\b', text)
+        if dollar_match:
+            return dollar_match.group(1).upper()
     except:
         pass
     return None
 
 def clean_info(text):
     """
-    提取重點數據並去除廣告/無用連結
+    精準抽取 1h 的 OI、Price Change 與 Long/Short
     """
-    lines = [l.strip() for l in text.split('\n') if l.strip()]
-    results = []
-    
-    for line in lines:
-        # 過濾掉包含網址或推廣的行
-        if any(bad in line.lower() for bad in ["http", "t.me", "join", "ref"]):
-            continue
-        # 保留含有數字、百分比或關鍵字 (OI, Vol, Price) 的內容
-        if any(k in line.upper() for k in ["OI", "PRICE", "VOL", "%", "INCREASE", "DECREASE"]) or len(results) < 2:
-            results.append(line)
-            
-    return "\n".join(results[:3]) # 精簡保留前 3 行重點
+    # 1. 抓取 OI 1h (例如 +5.54% (1h))
+    oi_1h = "N/A"
+    oi_match = re.search(r'([\+\-]\d+\.\d+%\s*\(1h\))', text)
+    if oi_match:
+        oi_1h = oi_match.group(1).replace(" ", "")
+
+    # 2. 抓取 Price change 1h (例如 +5.54% (1h))
+    # 訊息中通常有兩區 (1h)，第二區為 Price
+    price_1h = "N/A"
+    price_matches = re.findall(r'([\+\-]\d+\.\d+%\s*\(1h\))', text)
+    if len(price_matches) >= 2:
+        price_1h = price_matches[1].replace(" ", "")
+    elif len(price_matches) == 1:
+        price_1h = price_matches[0].replace(" ", "")
+
+    # 3. 抓取 Long/Short 1h (例如 0.99 (1h))
+    ls_1h = "N/A"
+    ls_match = re.search(r'Long/Short\s+.*?\b(\d+\.\d+)\s*\(1h\)', text, re.IGNORECASE)
+    if ls_match:
+        ls_1h = ls_match.group(1)
+
+    # 組合乾淨的文字輸出
+    result = (
+        f"📈 *OI (1h)*: {oi_1h}\n"
+        f"💰 *Price (1h)*: {price_1h}\n"
+        f"⚖️ *L/S (1h)*: {ls_1h}"
+    )
+    return result
 
 def main():
-    print(f"=== 啟動檢查 (oi_detector): {get_tw_now().strftime('%H:%M:%S')} ===")
+    print(f"=== 啟動檢查: {get_tw_now().strftime('%H:%M:%S')} ===")
     
-    # 1. 載入歷史紀錄
     history = {}
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, 'r') as f:
             try: history = json.load(f)
             except: history = {}
 
-    # 2. 爬取新頻道
     url = "https://t.me/s/oi_detector"
     try:
         res = requests.get(url, timeout=15)
         soup = BeautifulSoup(res.text, 'html.parser')
         messages = soup.find_all('div', class_='tgme_widget_message_text')
-        print(f"找到 {len(messages)} 則訊息")
     except Exception as e:
         print(f"網頁讀取失敗: {e}")
         return
@@ -89,7 +97,6 @@ def main():
     found_new = False
     seen_this_run = set()
 
-    # 3. 從舊到新處理訊息
     for msg_div in reversed(messages):
         full_text = msg_div.get_text()
         coin = extract_coin(full_text)
@@ -97,7 +104,6 @@ def main():
         if coin and coin not in seen_this_run:
             last_time = history.get(coin, 0)
             
-            # 4. 檢查 96 小時冷卻
             if (now_ts - last_time) > COOLDOWN_SECONDS:
                 data_text = clean_info(full_text)
                 tw_time = get_tw_now().strftime('%m/%d %H:%M')
@@ -110,13 +116,12 @@ def main():
                 )
                 
                 send_bot_msg(alert_text)
-                print(f"✅ 已發送通知: {coin}")
+                print(f"✅ 已發送精簡通知: {coin}")
                 
                 history[coin] = now_ts
                 seen_this_run.add(coin)
                 found_new = True
 
-    # 5. 存回歷史檔案
     if found_new:
         with open(HISTORY_FILE, 'w') as f:
             json.dump(history, f)
