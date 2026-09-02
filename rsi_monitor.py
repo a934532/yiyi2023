@@ -11,7 +11,7 @@ TOKEN = os.getenv('TG_TOKEN')
 CHAT_ID = os.getenv('TG_CHAT_ID')
 HISTORY_FILE = 'notify_history.json'
 
-# 修改處：從 48 小時改成 96 小時 (96 * 3600 = 345600 秒)
+# 冷卻時間：96 小時
 COOLDOWN_SECONDS = 96 * 3600  
 
 def get_tw_now():
@@ -27,60 +27,70 @@ def send_bot_msg(text):
 
 def extract_coin(text):
     """
-    精確提取幣名，支援 1~12 個字元的代碼 (例如 B, XRP, 1000PEPE)
+    專為 t.me/oi_detector 優化的幣名提取邏輯
+    嘗試抓取如 $BTC, $ETH, BTCUSDT 或大寫代碼
     """
     try:
-        first_line = text.split('\n')[0]
-        if '—' in first_line:
-            potential = first_line.split('—')[-1].strip()
-            match = re.search(r'^([A-Z0-9]{1,12})', potential)
-            if match:
-                return match.group(1)
+        # 1. 優先尋找帶有 $ 符號的幣名 (例如 $BTC)
+        dollar_match = re.search(r'\$([A-Z0-9]{1,12})', text)
+        if dollar_match:
+            return dollar_match.group(1)
+
+        # 2. 如果沒有 $，抓取第一行或第二行的大寫代碼
+        lines = [l.strip() for l in text.split('\n') if l.strip()]
+        for line in lines[:2]:
+            # 尋找包含 USDT / BUSD 的組合，或者純大寫代碼
+            coin_match = re.search(r'\b([A-Z0-9]{1,12})(?:USDT|PERP)?\b', line)
+            if coin_match:
+                return coin_match.group(1)
     except:
         pass
     return None
 
 def clean_info(text):
     """
-    提取 OI 與 價格 數據，過濾廣告
+    提取重點數據並去除廣告/無用連結
     """
-    formatted = text.replace("📈", "\n📈").replace("💱", "\n💱")
-    lines = [l.strip() for l in formatted.split('\n') if l.strip()]
-    
+    lines = [l.strip() for l in text.split('\n') if l.strip()]
     results = []
-    for line in lines:
-        if any(k in line.upper() for k in ["OI ", "PRICE", "INCREASED", "DECREASED"]):
-            clean_line = re.sub(r'FULL ACCESS.*|THIS IS ONLY.*|PRO FOR 24.*', '', line, flags=re.IGNORECASE)
-            if clean_line.strip():
-                results.append(clean_line.strip())
     
-    return "\n".join(results[:2])
+    for line in lines:
+        # 過濾掉包含網址或推廣的行
+        if any(bad in line.lower() for bad in ["http", "t.me", "join", "ref"]):
+            continue
+        # 保留含有數字、百分比或關鍵字 (OI, Vol, Price) 的內容
+        if any(k in line.upper() for k in ["OI", "PRICE", "VOL", "%", "INCREASE", "DECREASE"]) or len(results) < 2:
+            results.append(line)
+            
+    return "\n".join(results[:3]) # 精簡保留前 3 行重點
 
 def main():
-    print(f"=== 啟動檢查: {get_tw_now().strftime('%H:%M:%S')} ===")
+    print(f"=== 啟動檢查 (oi_detector): {get_tw_now().strftime('%H:%M:%S')} ===")
     
-    # 1. 載入紀錄
+    # 1. 載入歷史紀錄
     history = {}
     if os.path.exists(HISTORY_FILE):
         with open(HISTORY_FILE, 'r') as f:
             try: history = json.load(f)
             except: history = {}
 
-    # 2. 爬取網頁
+    # 2. 爬取新頻道
+    url = "https://t.me/s/oi_detector"
     try:
-        res = requests.get("https://t.me/s/oiscreener", timeout=15)
+        res = requests.get(url, timeout=15)
         soup = BeautifulSoup(res.text, 'html.parser')
         messages = soup.find_all('div', class_='tgme_widget_message_text')
-    except:
-        print("網頁讀取超時")
+        print(f"找到 {len(messages)} 則訊息")
+    except Exception as e:
+        print(f"網頁讀取失敗: {e}")
         return
 
     now_ts = time.time()
     found_new = False
     seen_this_run = set()
 
-    # 3. 處理訊息 (逆序處理：從舊到新)
-    for msg_div in messages:
+    # 3. 從舊到新處理訊息
+    for msg_div in reversed(messages):
         full_text = msg_div.get_text()
         coin = extract_coin(full_text)
         
@@ -100,13 +110,13 @@ def main():
                 )
                 
                 send_bot_msg(alert_text)
-                print(f"✅ 已通知: {coin}")
+                print(f"✅ 已發送通知: {coin}")
                 
                 history[coin] = now_ts
                 seen_this_run.add(coin)
                 found_new = True
 
-    # 5. 更新檔案
+    # 5. 存回歷史檔案
     if found_new:
         with open(HISTORY_FILE, 'w') as f:
             json.dump(history, f)
